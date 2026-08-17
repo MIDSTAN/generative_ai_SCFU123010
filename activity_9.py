@@ -10,18 +10,6 @@ client = Groq(
     api_key=api_key,
 )
 
-chat_completion = client.chat.completions.create(
-    messages=[
-        {
-            "role": "user",
-            "content": "Hi which model are you using",
-        }
-    ],
-    model="openai/gpt-oss-20b",
-)
-
-print(chat_completion.choices[0].message.content)
-
 history = []
 
 while True:
