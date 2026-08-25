@@ -1,23 +1,34 @@
 import os
 import json
 from dotenv import load_dotenv
+from openai import OpenAI
+
+# ---------------------------------------------------------
+# 1. Load API
+# ---------------------------------------------------------
 
 load_dotenv()
 
 api_key = os.getenv("NVIDIA_API_KEY")
 
-from openai import OpenAI
-
 client = OpenAI(
-  base_url = "https://integrate.api.nvidia.com/v1",
-  api_key = api_key
+    base_url="https://integrate.api.nvidia.com/v1",
+    api_key=api_key
 )
-    
-job_profile="""
+
+
+# ---------------------------------------------------------
+# 2. Job Profile
+# ---------------------------------------------------------
+
+job_profile = """
 Job Role: Machine Learning Engineer
 
 Job Description:
-A Machine Learning Engineer is responsible for designing, developing, training, evaluating, and deploying machine learning models. The role requires strong knowledge of Python, machine learning algorithms, deep learning, data preprocessing, model evaluation, and deployment.
+A Machine Learning Engineer is responsible for designing, developing,
+training, evaluating, and deploying machine learning models. The role
+requires strong knowledge of Python, machine learning algorithms,
+deep learning, data preprocessing, model evaluation, and deployment.
 
 Required Skills:
 - Python programming
@@ -49,7 +60,12 @@ Preferred Qualifications:
 - Good problem-solving and analytical skills
 """
 
-user_profile="""
+
+# ---------------------------------------------------------
+# 3. User Profile
+# ---------------------------------------------------------
+
+user_profile = """
 Name: Pruthviraj Santosh Sapate
 
 Education:
@@ -90,6 +106,7 @@ Machine Learning / AI Experience:
 - Experience using NVIDIA AI APIs and OpenAI-compatible APIs
 
 Projects:
+
 1. Cross-Modal Deepfake Detection
    - Detection of manipulated image and video content
    - CNN and Vision Transformer based architecture
@@ -139,33 +156,303 @@ Areas to Improve:
 - Real-world ML engineering practices
 
 Career Goal:
-Become a job-ready Machine Learning Engineer with strong practical skills in machine learning, deep learning, computer vision, generative AI, model deployment, and MLOps.
-"""
-    
-prompt = """
-role : you are a Job ready roadmap builder expert
-context : you have to give roadmap for a particular job role, according to the users linkdin profile
-task : study users profile and job profile and give him a complete road map for that job
-input data : {user_profile}{job_profile}
-output format: Give a flow chart of road map
+Become a job-ready Machine Learning Engineer with strong practical skills
+in machine learning, deep learning, computer vision, generative AI,
+model deployment, and MLOps.
 """
 
-final_prompt = prompt.format(job_profile=job_profile,user_profile=user_profile)
+
+# ---------------------------------------------------------
+# 4. Two-Way Pipeline Prompt
+# ---------------------------------------------------------
+
+system_prompt = """
+You are an expert Job-to-Candidate Analysis and Outreach Pipeline.
+
+You have TWO responsibilities.
+
+=========================================================
+PIPELINE 1: HR OUTREACH
+=========================================================
+
+Compare the candidate profile with the job description.
+
+Generate a professional and personalized email to the HR/recruiter.
+
+The email should:
+- Have a professional subject
+- Introduce the candidate
+- Mention the strongest matching skills
+- Mention 1-2 highly relevant projects
+- Explain why those projects are relevant to the job
+- Mention the candidate's degree
+- Show genuine interest in the role
+- Request an opportunity to discuss the position
+- NOT falsely claim experience that is not present
+- Be concise and ready to send
+
+=========================================================
+PIPELINE 2: JOB GAP + LEARNING ANALYSIS
+=========================================================
+
+Analyze the job description against the candidate profile.
+
+Identify:
+
+1. Skills already matching the job
+2. Skills partially matching the job
+3. Missing skills
+4. Skills that need improvement
+5. Priority of each missing/improvable skill
+6. What exactly the candidate should learn
+7. Practical projects or tasks that would demonstrate that skill
+8. Suggested learning order
+
+For every missing or weak skill, explain it in simple language.
+
+Priority should be one of:
+
+- HIGH
+- MEDIUM
+- LOW
+
+Focus especially on skills that are important for becoming
+job-ready for THIS PARTICULAR job.
+
+Do not recommend random technologies that are unrelated to the JD.
+
+=========================================================
+OUTPUT FORMAT
+=========================================================
+
+Return ONLY valid JSON.
+
+Use this structure:
+
+{
+    "job_analysis": {
+        "job_role": "",
+        "job_summary": "",
+        "match_percentage": 0,
+        "strong_matches": [],
+        "partial_matches": [],
+        "missing_skills": []
+    },
+
+    "outreach": {
+        "subject": "",
+        "email": ""
+    },
+
+    "learning_plan": [
+        {
+            "skill": "",
+            "current_status": "",
+            "priority": "",
+            "why_needed": "",
+            "what_to_learn": [],
+            "practical_task": ""
+        }
+    ],
+
+    "recommended_order": []
+}
+
+Important:
+- Do not invent experience.
+- Use only information provided in the candidate profile.
+- Match the learning recommendations specifically to the job.
+- Keep the email concise.
+- Keep explanations easy to understand.
+"""
+
+
+# ---------------------------------------------------------
+# 5. User Prompt
+# ---------------------------------------------------------
+
+user_prompt = f"""
+Analyze the following candidate and job description.
+
+JOB PROFILE:
+{job_profile}
+
+CANDIDATE PROFILE:
+{user_profile}
+
+Generate both pipelines:
+
+1. HR outreach email
+2. Job gap analysis + learning plan
+
+Return only valid JSON.
+"""
+
+
+# ---------------------------------------------------------
+# 6. Call NVIDIA Model
+# ---------------------------------------------------------
 
 completion = client.chat.completions.create(
-  model="nvidia/nemotron-3.5-lightning-30b-a3b",
-  messages=[{"role":"user","content":final_prompt}],
-  temperature=1,
-  top_p=0.95,
-  max_tokens=16384,
-  extra_body={"chat_template_kwargs":{"enable_thinking":True},"reasoning_budget":16384},
-  stream=True
+    model="nvidia/nemotron-3.5-lightning-30b-a3b",
+
+    messages=[
+        {
+            "role": "system",
+            "content": system_prompt
+        },
+        {
+            "role": "user",
+            "content": user_prompt
+        }
+    ],
+
+    temperature=0.3,
+    top_p=0.9,
+    max_tokens=12000,
+
+    extra_body={
+        "chat_template_kwargs": {
+            "enable_thinking": True
+        },
+        "reasoning_budget": 8000
+    },
+
+    stream=True
 )
+
+
+# ---------------------------------------------------------
+# 7. Collect Response
+# ---------------------------------------------------------
+
+response = ""
+
 for chunk in completion:
-  if not chunk.choices:
-    continue
-  reasoning = getattr(chunk.choices[0].delta, "reasoning_content", None)
-  if reasoning:
-    print(reasoning, end="")
-  if chunk.choices[0].delta.content is not None:
-    print(chunk.choices[0].delta.content, end="")
+
+    if not chunk.choices:
+        continue
+
+    content = chunk.choices[0].delta.content
+
+    if content is not None:
+        response += content
+
+
+# ---------------------------------------------------------
+# 8. Convert JSON Response
+# ---------------------------------------------------------
+
+try:
+
+    # Remove possible markdown JSON wrapper
+    response = response.strip()
+
+    if response.startswith("```json"):
+        response = response[7:]
+
+    if response.startswith("```"):
+        response = response[3:]
+
+    if response.endswith("```"):
+        response = response[:-3]
+
+    response = response.strip()
+
+    result = json.loads(response)
+
+except json.JSONDecodeError:
+
+    print("Model did not return valid JSON.")
+    print(response)
+    exit()
+
+
+# ---------------------------------------------------------
+# 9. PIPELINE 1 — Outreach
+# ---------------------------------------------------------
+
+print("\n")
+print("=" * 70)
+print("PIPELINE 1 — HR OUTREACH")
+print("=" * 70)
+
+print("\nSubject:")
+print(result["outreach"]["subject"])
+
+print("\nEmail:")
+print(result["outreach"]["email"])
+
+
+# ---------------------------------------------------------
+# 10. PIPELINE 2 — Job Analysis
+# ---------------------------------------------------------
+
+print("\n")
+print("=" * 70)
+print("PIPELINE 2 — JOB ANALYSIS")
+print("=" * 70)
+
+job_analysis = result["job_analysis"]
+
+print("\nJob Role:")
+print(job_analysis["job_role"])
+
+print("\nMatch Percentage:")
+print(f'{job_analysis["match_percentage"]}%')
+
+
+print("\nStrong Matches:")
+
+for skill in job_analysis["strong_matches"]:
+    print(f"  ✓ {skill}")
+
+
+print("\nPartial Matches:")
+
+for skill in job_analysis["partial_matches"]:
+    print(f"  ~ {skill}")
+
+
+print("\nMissing Skills:")
+
+for skill in job_analysis["missing_skills"]:
+    print(f"  ✗ {skill}")
+
+
+# ---------------------------------------------------------
+# 11. LEARNING PLAN
+# ---------------------------------------------------------
+
+print("\n")
+print("=" * 70)
+print("LEARNING PLAN")
+print("=" * 70)
+
+for item in result["learning_plan"]:
+
+    print("\nSkill:", item["skill"])
+    print("Current Status:", item["current_status"])
+    print("Priority:", item["priority"])
+    print("Why Needed:", item["why_needed"])
+
+    print("What to Learn:")
+
+    for topic in item["what_to_learn"]:
+        print(f"  - {topic}")
+
+    print("Practical Task:")
+    print(f"  {item['practical_task']}")
+
+
+# ---------------------------------------------------------
+# 12. RECOMMENDED LEARNING ORDER
+# ---------------------------------------------------------
+
+print("\n")
+print("=" * 70)
+print("RECOMMENDED LEARNING ORDER")
+print("=" * 70)
+
+for i, skill in enumerate(result["recommended_order"], 1):
+    print(f"{i}. {skill}")
